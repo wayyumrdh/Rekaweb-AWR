@@ -22,9 +22,13 @@ const app = express();
 // 💡 PERBAIKAN CORS: Diubah menjadi 'origin: true' agar fleksibel menerima req dari localhost maupun domain Vercel online kamu
 // 👑 Hubungkan langsung ke port frontend lokal kamu
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], 
+    origin: [
+        'http://localhost:5173', 
+        'http://127.0.0.1:5173', 
+        'https://rekaweb-awr.vercel.app' // 💡 WAJIB TAMBAHKAN INI (Tanpa tanda garis miring '/' di ujungnya)
+    ], 
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Tambahkan OPTIONS untuk mengamankan preflight req
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
