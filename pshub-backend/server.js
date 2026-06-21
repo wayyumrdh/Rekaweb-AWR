@@ -6,8 +6,8 @@ const bcrypt = require('bcryptjs');
 const moment = require('moment');
 const jwt = require('jsonwebtoken');
 
-// Kunci Rahasia JWT Server
-const JWT_SECRET = "ADA_ADA_JI_ITU";
+// 💡 Kunci Rahasia JWT Server (Membaca Environment Variables Railway, Fallback ke string default)
+const JWT_SECRET = process.env.JWT_SECRET || "ADA_ADA_JI_ITU";
 
 // Import Models
 const User = require('./models/User');
@@ -18,8 +18,10 @@ const ReservationSnack = require('./models/ReservationSnack');
 const Menu = require('./models/Menu');
 
 const app = express();
+
+// 💡 PERBAIKAN CORS: Diubah menjadi 'origin: true' agar fleksibel menerima req dari localhost maupun domain Vercel online kamu
 app.use(cors({
-    origin: 'http://localhost:5173', 
+    origin: true, 
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -267,7 +269,7 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
             waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
         }
         
-        // 🎯 SINKRONISASI KILAT: 1 Jam dari frontend (60 menit) / 60 = 1 menit sewa di database
+        // 🎯 SINKRONISASI KILAT: 1 Jam dari frontend (60 menit) / 60 = 1 minute sewa di database
         const durasiSimulasiKamar = Math.max(1, Math.round(parseInt(durasi, 10) / 60));
         const waktuSelesai = moment(waktuMulai).add(durasiSimulasiKamar, 'minutes').format('YYYY-MM-DD HH:mm:ss');
 
@@ -481,8 +483,6 @@ app.put('/api/admin/reservation/:type/:id', verifyToken, async (req, res) => {
             }
             
             await room.update({ status: newStatus });
-            // Jika status awal sudah terlanjur aktif namun dibatalkan/direject di kemudian waktu, kembalikan stoknya
-            // Namun karena dari awal 'pending' tidak memotong stok, jika di-reject langsung saat 'pending', jangan jalankan perintah increment di bawah ini.
         }
 
         res.json({ message: `Reservasi berhasil di-${action === 'accept' ? 'terima (Bilik Aktif)' : 'tolak'}` });
@@ -555,9 +555,6 @@ app.put('/api/admin/users/:id/role', verifyToken, async (req, res) => {
     }
 });
 
-// 🎯 PERBAIKAN SUPREME: Menghapus dependensi transaksi berdasarkan variasi penamaan kolom (UserId & userId)
-// GANTI API HAPUS USER DI SERVER.JS DENGAN SQL RAW QUERY TERARAH INI:
-// GANTI API HAPUS USER DI SERVER.JS DENGAN URUTAN PEMBERSIHAN BERTAHAP INI:
 app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
     try {
         if (req.user.role !== 'admin') {
@@ -572,7 +569,6 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
 
         console.log(`[PSHUB-CHAIN-DELETE] Memulai pembersihan berantai untuk User ID: ${targetId}`);
 
-        // 🎯 LANGKAH 1: Hapus data di reservation_snacks yang terikat lewat room_reservations milik user ini
         await db.query(`
             DELETE FROM reservation_snacks 
             WHERE reservationId IN (SELECT id FROM room_reservations WHERE userId = ?)
@@ -581,13 +577,11 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
             type: db.QueryTypes.DELETE
         }).catch(err => console.log("Info: reservation_snacks lewati ->", err.message));
 
-        // 🎯 LANGKAH 2: Hapus data di room_reservations (Sekarang aman karena snack-nya sudah bersih)
         await db.query('DELETE FROM room_reservations WHERE userId = ?', {
             replacements: [targetId],
             type: db.QueryTypes.DELETE
         }).catch(err => console.log("Info: room_reservations lewati ->", err.message));
 
-        // 🎯 LANGKAH 3: Hapus data di tabel booking reguler (Mencoba variasi nama tabel 'booking' dan 'bookings')
         await db.query('DELETE FROM booking WHERE userId = ?', {
             replacements: [targetId],
             type: db.QueryTypes.DELETE
@@ -598,7 +592,6 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
             type: db.QueryTypes.DELETE
         }).catch(err => console.log("Info: tabel 'bookings' lewati ->", err.message));
 
-        // 🎯 LANGKAH 4: Setelah semua data transaksional bersih total, eksekusi tabel user utama
         await db.query('DELETE FROM user WHERE id = ?', {
             replacements: [targetId],
             type: db.QueryTypes.DELETE
@@ -613,19 +606,14 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
     }
 });
 
-// ====================================================================
-// 📊 API ADMIN: AMBIL RIWAYAT RESERVASI BERDASARKAN USER ID (KALIBRASI)
-// ====================================================================
 app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
     try {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ message: "Akses ditolak, Anda bukan admin!" });
         }
 
-        // Ambil target ID dan konversi ke Integer agar klop dengan tipe data MySQL
         const targetUserId = parseInt(req.params.userId, 10);
 
-        // Ambil data paralel dari tabel booking dan room_reservations
         const [regulerRentals, privateRoomReservations] = await Promise.all([
             Booking.findAll({
                 where: { userId: targetUserId },
@@ -639,7 +627,6 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
             })
         ]);
 
-        // Mapping Kamar Privat
         const formattedRooms = privateRoomReservations.map(room => {
             const data = room.toJSON();
             return {
@@ -654,7 +641,6 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
             };
         });
 
-        // Mapping Rental Reguler
         const formattedReguler = regulerRentals.map(reg => {
             const data = reg.toJSON();
             return {
@@ -669,7 +655,6 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
             };
         });
 
-        // Gabungkan seluruh log transaksi lalu urutkan dari yang paling baru
         const combinedHistory = [...formattedReguler, ...formattedRooms].sort(
             (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
         );
@@ -681,5 +666,6 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
     }
 });
 
-// Jalankan Server Utama PSHUB
-app.listen(5000, () => console.log('🚀 Server running on port 5000 dengan Keamanan JWT Terintegrasi'));
+// 💡 PERBAIKAN PORT: Menggunakan port dinamis bawaan cloud Railway (process.env.PORT)
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT} dengan Keamanan JWT Terintegrasi`));
