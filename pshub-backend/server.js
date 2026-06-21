@@ -20,13 +20,13 @@ const Menu = require('./models/Menu');
 const app = express();
 
 // 💡 PERBAIKAN CORS: Diubah menjadi 'origin: true' agar fleksibel menerima req dari localhost maupun domain Vercel online kamu
+// 👑 Hubungkan langsung ke port frontend lokal kamu
 app.use(cors({
-    origin: true, 
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], 
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Tambahkan OPTIONS untuk mengamankan preflight req
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 
 // ====================================================================
