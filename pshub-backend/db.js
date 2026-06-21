@@ -14,6 +14,7 @@ const db = new Sequelize(
         // 🔥 TAMBAHAN KHUSUS UNTUK AIVEN (Wajib menggunakan SSL cloud)
         dialectOptions: {
             ssl: {
+                require: true,
                 rejectUnauthorized: false
             }
         }
