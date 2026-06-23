@@ -370,5 +370,3 @@ const Monitoring = () => {
 };
 
 export default Monitoring;
-
-maksud saya kode monitoring ini yang bermasalah'
