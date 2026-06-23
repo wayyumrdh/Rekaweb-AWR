@@ -106,8 +106,8 @@ const Monitoring = () => {
           let startTimeInfo = null;
           let remainingTimeInfo = null;
 
-          if (!rent.waktu_mulai || !rent.waktu_selesai || rent.status === 'pending' || rent.status === 'booked') {
-            currentStatus = 'booking';
+          if (!rent.waktu_mulai || !rent.waktu_selesai || statusDariDB === 'pending' || statusDariDB === 'booked' || statusDariDB === 'booking') {
+            currentStatus = 'booking'; // Diseragamkan menjadi 'booking' agar lolos filter JSX di bawah
             if (rent.waktu_mulai) {
               startTimeInfo = new Date(rent.waktu_mulai).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             }
@@ -115,12 +115,13 @@ const Monitoring = () => {
             const now = new Date().getTime();
             const endRent = new Date(rent.waktu_selesai).getTime();
             const diffMs = endRent - now;
-
+          
             if (diffMs > 0) {
               const diffHrs = Math.floor(diffMs / 3600000);
               const diffMins = Math.floor((diffMs % 3600000) / 60000);
               const diffSecs = Math.floor((diffMs % 60000) / 1000);
               remainingTimeInfo = `${String(diffHrs).padStart(2, '0')}:${String(diffMins).padStart(2, '0')}:${String(diffSecs).padStart(2, '0')} Sisa`;
+              currentStatus = 'occupied';
             } else {
               currentStatus = 'free';
             }
