@@ -19,7 +19,7 @@ const Menu = require('./models/Menu');
 
 const app = express();
 
-// 💡 PERBAIKAN CORS: Sinkron penuh dengan domain produksi dan lokal laptop ThinkPad kamu
+// 💡 PENGATURAN CORS: Sinkron penuh dengan domain produksi Vercel dan lokal laptop ThinkPad kamu
 app.use(cors({
     origin: [
         'http://localhost:5173', 
@@ -132,7 +132,7 @@ app.post('/login', async (req, res) => {
 
 
 // ====================================================================
-// ⏱️ FIX UTAMA 1: AUTOMATION RELEASE UNIT DATABASE DENGAN SOLID
+// ⏱️ AUTOMATION RELEASE UNIT DATABASE (1 JAM SEWA = 1 MENIT RIIL)
 // ====================================================================
 const autoReleaseUnits = async () => {
     try {
@@ -151,7 +151,7 @@ const autoReleaseUnits = async () => {
                 const statusLama = booking.status;
                 await booking.update({ status: 'finished' });
                 
-                // Kembalikan stok ke gudang jika status lamanya sempat memotong stok (active)
+                // Kembalikan stok ke gudang jika status lamanya sempat memotong stok fisik (active)
                 if (unitId && statusLama === 'active') {
                     await Unit.increment('stok_tersedia', { by: 1, where: { id: unitId } });
                     console.log(`✅ [Auto-Release] Unit Rental Reguler ID ${unitId} otomatis dikembalikan.`);
@@ -182,7 +182,7 @@ const autoReleaseUnits = async () => {
         console.error("🔥 Gagal menjalankan siklus Auto-Release:", err);
     }
 };
-// Jalankan pengecekan otomatis database setiap 5 detik agar timer user responsif
+// Jalankan pengecekan otomatis database setiap 5 detik agar timer user sangat responsif saat testing
 setInterval(autoReleaseUnits, 5000);
 
 
@@ -220,7 +220,9 @@ app.post('/api/booking', verifyToken, async (req, res) => {
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
         if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
 
-        const waktuSelesai = moment(waktuMulai).add(parseInt(durasi, 10), 'minutes').format('YYYY-MM-DD HH:mm:ss'); 
+        // 🎯 FIX SIMULASI TIMING: Mengubah input durasi Jam menjadi skala Menit di database
+        const durasiSimulasi = Math.max(1, parseInt(durasi, 10)); 
+        const waktuSelesai = moment(waktuMulai).add(durasiSimulasi, 'minutes').format('YYYY-MM-DD HH:mm:ss'); 
 
         const newBooking = await Booking.create({
             userId, unitId: unit.id, nama_penyewa: namaLengkap,
@@ -229,8 +231,7 @@ app.post('/api/booking', verifyToken, async (req, res) => {
             status: 'pending', isReservation: (jenis || alamat === "PSHUB Room")
         });
 
-        // Potong stok gudang
-        await unit.decrement('stok_tersedia', { by: 1 });
+        // 💡 FIX AMAN: Jangan potong stok gudang saat pending agar tidak terpotong dua kali di rumus hitung frontend admin
         res.status(201).json(newBooking);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -280,8 +281,9 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
         if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
         
-        // 🎯 DISESUAIKAN: Menghitung waktu selesai riil berdasarkan total menit dari frontend (bukan pembagian 60)
-        const waktuSelesai = moment(waktuMulai).add(parseInt(durasi, 10), 'minutes').format('YYYY-MM-DD HH:mm:ss');
+        // 🎯 FIX SIMULASI TIMING: 1 jam dari frontend dikonversi menjadi 1 menit riil di tabel basis data
+        const durasiSimulasiKamar = Math.max(1, parseInt(durasi, 10));
+        const waktuSelesai = moment(waktuMulai).add(durasiSimulasiKamar, 'minutes').format('YYYY-MM-DD HH:mm:ss');
 
         const newReservation = await RoomReservation.create({
             userId: parseInt(userId, 10),
@@ -362,12 +364,11 @@ app.get('/api/units', verifyToken, async (req, res) => {
 });
 
 
-// 🎯 FIX UTAMA 2: SEWA PENDING SEKARANG LOLOS DI FILTER MONITORING LIVE ADMIN
+// 🎯 FIX UTAMA: Sewa pending dan booked sekarang diloloskan murni agar terbaca di denah bilik live admin
 app.get('/api/active-rentals', verifyToken, async (req, res) => {
     try {
         const [regulerRentals, privateRoomReservations] = await Promise.all([
             Booking.findAll({
-                // Meloloskan status pending dan booked agar dibaca oleh bilik denah admin
                 where: { status: { [Op.in]: ['active', 'pending', 'booked'] } }, 
                 include: [{ model: Unit, attributes: ['nama_unit', 'jenis'] }]
             }),
@@ -479,6 +480,11 @@ app.put('/api/admin/reservation/:type/:id', verifyToken, async (req, res) => {
         if (type === 'reguler') {
             const booking = await Booking.findByPk(id);
             if (!booking) return res.status(404).json({ message: "Data tidak ditemukan" });
+            
+            // 💡 FIX AMAN: Stok fisik di database baru dikurangi saat Admin mengklik tombol ACCEPT (Setuju)
+            if (action === 'accept' && booking.status !== 'active') {
+                await Unit.decrement('stok_tersedia', { by: 1, where: { id: booking.unitId } });
+            }
             
             await booking.update({ status: newStatus });
             if (action === 'reject') await Unit.increment('stok_tersedia', { by: 1, where: { id: booking.unitId } });
@@ -611,7 +617,7 @@ app.delete('/api/admin/users/:id', verifyToken, async (req, res) => {
         });
 
         console.log(`[PSHUB-CHAIN-DELETE] Sukses menghapus akun user lama ID: ${targetId}`);
-        res.json({ message: "Akun pengguna beserta seluruh riwayat sewa dan pesanan snack berhasil dihapus bersih." });
+        res.json({ message: "Akun pengguna berhasil dihapus bersih." });
 
     } catch (err) {
         console.error("🔥 Gagal total mengeksekusi penghapusan berantai:", err);
@@ -681,4 +687,4 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
 
 // 💡 Menggunakan port dinamis bawaan cloud Railway
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT} dengan Keamanan JWT Terintegrasi`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT} dengan Keamanan JWT Simulasi Kilat Terintegrasi`));
