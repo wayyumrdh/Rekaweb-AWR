@@ -76,87 +76,95 @@ const Monitoring = () => {
       });
 
       // 🎯 RE-STRUCTURE LOOPING: Render bilik berdasarkan total kapasitas inventaris riil
-      Object.keys(baseGrouped).forEach(key => {
-        baseGrouped[key].items = [];
-      });
+// 🎯 RE-STRUCTURE LOOPING: Render bilik berdasarkan kapasitas inventaris riil yang akurat
+      Object.keys(baseGrouped).forEach(key => {
+        baseGrouped[key].items = [];
+      });
 
-      unitsData.forEach(item => {
-        const areaKey = cleanKey(item.nama_unit);
-        if (!baseGrouped[areaKey]) return;
+      unitsData.forEach(item => {
+        const areaKey = cleanKey(item.nama_unit);
+        if (!baseGrouped[areaKey]) return;
 
-        const jenisUnit = (item.jenis || "standar").toLowerCase();
-        const prefix = jenisUnit.includes("vip") ? "VIP" : "STD";
-        const totalStok = parseInt(item.stok_tersedia, 10) || 0;
-        const defaultStatus = item.status === 'maintenance' ? 'maintenance' : 'free';
+        const jenisUnit = (item.jenis || "standar").toLowerCase();
+        const prefix = jenisUnit.includes("vip") ? "VIP" : "STD";
+        const totalStok = parseInt(item.stok_tersedia, 10) || 0;
+        const defaultStatus = item.status === 'maintenance' ? 'maintenance' : 'free';
 
-        // Ambil daftar transaksi aktif khusus untuk perangkat/varian unit ini
-        const activeTransactionsForThisUnit = rentalMapByUnit[item.id] || [];
+        // Ambil daftar transaksi aktif khusus untuk perangkat/varian unit ini
+        const activeTransactionsForThisUnit = rentalMapByUnit[item.id] || [];
+        
+        // 🏁 Variabel penanda untuk menghitung jumlah slot yang benar-benar terpakai (Occupied / Booking)
+        let totalSlotTerpakaiRiil = 0;
 
-        // 1. Render dulu slot-slot yang sedang terpakai bermain (Occupied / Booking)
-        activeTransactionsForThisUnit.forEach((rent, idx) => {
-          const slotNumber = String(baseGrouped[areaKey].items.length + 1).padStart(2, '0');
-          
-          const jenisUnitDB = rent.jenis || item.jenis || "standar";
-          const isVIP = jenisUnitDB.toLowerCase().includes("vip");
-          const cardPrefix = isVIP ? "VIP" : "STD";
+        // 1. Render dulu slot-slot yang sedang terpakai bermain (Occupied / Booking)
+        activeTransactionsForThisUnit.forEach((rent) => {
+          const slotNumber = String(baseGrouped[areaKey].items.length + 1).padStart(2, '0');
+          
+          const jenisUnitDB = rent.jenis || item.jenis || "standar";
+          const isVIP = jenisUnitDB.toLowerCase().includes("vip");
+          const cardPrefix = isVIP ? "VIP" : "STD";
 
-          const customerName = rent.namaLengkap || rent.nama_player || rent.nama_penyewa || 'GAMER';
+          const customerName = rent.namaLengkap || rent.nama_player || rent.nama_penyewa || 'GAMER';
 
-          let currentStatus = 'occupied';
-          let startTimeInfo = null;
-          let remainingTimeInfo = null;
+          let currentStatus = 'occupied';
+          let startTimeInfo = null;
+          let remainingTimeInfo = null;
 
-          if (!rent.waktu_mulai || !rent.waktu_selesai || rent.status === 'pending' || rent.status === 'booked') {
-            currentStatus = 'booking';
-            if (rent.waktu_mulai) {
-              startTimeInfo = new Date(rent.waktu_mulai).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-          } else {
-            const now = new Date().getTime();
-            const endRent = new Date(rent.waktu_selesai).getTime();
-            const diffMs = endRent - now;
+          const statusDariDB = String(rent.status).toLowerCase();
 
-            if (diffMs > 0) {
-              const diffHrs = Math.floor(diffMs / 3600000);
-              const diffMins = Math.floor((diffMs % 3600000) / 60000);
-              const diffSecs = Math.floor((diffMs % 60000) / 1000);
-              remainingTimeInfo = `${String(diffHrs).padStart(2, '0')}:${String(diffMins).padStart(2, '0')}:${String(diffSecs).padStart(2, '0')} Sisa`;
-            } else {
-              currentStatus = 'free';
-            }
-          }
+          // ⚡ Sinkronisasi string status agar fleksibel membaca data pending/booked dari backend baru
+          if (!rent.waktu_mulai || !rent.waktu_selesai || statusDariDB === 'pending' || statusDariDB === 'booked' || statusDariDB === 'booking') {
+            currentStatus = 'booking';
+            if (rent.waktu_mulai) {
+              startTimeInfo = new Date(rent.waktu_mulai).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+          } else {
+            const now = new Date().getTime();
+            const endRent = new Date(rent.waktu_selesai).getTime();
+            const diffMs = endRent - now;
 
-          if (currentStatus !== 'free') {
-            baseGrouped[areaKey].items.push({
-              id: `RENT-${rent.id}`,
-              rentalId: rent.id,
-              label: `${cardPrefix} ${slotNumber}`,
-              status: currentStatus,
-              customer: customerName,
-              waktu_mulai: startTimeInfo,
-              duration: remainingTimeInfo,
-            });
-          }
-        });
+            if (diffMs > 0) {
+              const diffHrs = Math.floor(diffMs / 3600000);
+              const diffMins = Math.floor((diffMs % 3600000) / 60000);
+              const diffSecs = Math.floor((diffMs % 60000) / 1000);
+              remainingTimeInfo = `${String(diffHrs).padStart(2, '0')}:${String(diffMins).padStart(2, '0')}:${String(diffSecs).padStart(2, '0')} Sisa`;
+              currentStatus = 'occupied';
+            } else {
+              currentStatus = 'free';
+            }
+          }
 
-        // 2. Render sisa kapasitas unit yang statusnya benar-benar kosong (FREE)
-        // Jumlah slot kosong = Total Stok Gudang dikurangi Transaksi yang sedang berjalan aktif
-        const freeSlotsCount = Math.max(0, totalStok - activeTransactionsForThisUnit.length);
+          if (currentStatus !== 'free') {
+            totalSlotTerpakaiRiil++; // Tambah hitungan jika slot benar-benar terisi visualnya
+            baseGrouped[areaKey].items.push({
+              id: `RENT-${rent.id}`,
+              rentalId: rent.id,
+              label: `${cardPrefix} ${slotNumber}`,
+              status: currentStatus,
+              customer: customerName,
+              waktu_mulai: startTimeInfo,
+              duration: remainingTimeInfo,
+            });
+          }
+        });
 
-        for (let i = 1; i <= freeSlotsCount; i++) {
-          const slotNumber = String(baseGrouped[areaKey].items.length + 1).padStart(2, '0');
-          baseGrouped[areaKey].items.push({
-            id: `FREE-${item.id}-${i}`,
-            rentalId: null,
-            label: `${prefix} ${slotNumber}`,
-            status: defaultStatus,
-            customer: null,
-            waktu_mulai: null,
-            duration: null,
-          });
-        }
-      });
+        // 2. Render sisa kapasitas unit yang statusnya benar-benar kosong (FREE)
+        // ✅ PERBAIKAN: Sisa slot dihitung dari totalStok dikurangi totalSlotTerpakaiRiil yang valid
+        const freeSlotsCount = Math.max(0, totalStok - totalSlotTerpakaiRiil);
 
+        for (let i = 1; i <= freeSlotsCount; i++) {
+          const slotNumber = String(baseGrouped[areaKey].items.length + 1).padStart(2, '0');
+          baseGrouped[areaKey].items.push({
+            id: `FREE-${item.id}-${i}`,
+            rentalId: null,
+            label: `${prefix} ${slotNumber}`,
+            status: defaultStatus,
+            customer: null,
+            waktu_mulai: null,
+            duration: null,
+          });
+        }
+      });
       const finalAreas = Object.values(baseGrouped).filter(area => area.items.length > 0);
       setAreas(finalAreas);
       setLoading(false);
