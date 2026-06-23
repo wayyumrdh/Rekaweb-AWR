@@ -19,13 +19,12 @@ const Menu = require('./models/Menu');
 
 const app = express();
 
-// 💡 PERBAIKAN CORS: Diubah menjadi 'origin: true' agar fleksibel menerima req dari localhost maupun domain Vercel online kamu
-// 👑 Hubungkan langsung ke port frontend lokal kamu
+// 💡 PERBAIKAN CORS: Sinkron penuh dengan domain produksi dan lokal laptop ThinkPad kamu
 app.use(cors({
     origin: [
         'http://localhost:5173', 
         'http://127.0.0.1:5173', 
-        'https://rekaweb-awr.vercel.app' // 💡 WAJIB TAMBAHKAN INI (Tanpa tanda garis miring '/' di ujungnya)
+        'https://rekaweb-awr.vercel.app'
     ], 
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -38,7 +37,7 @@ app.use(express.json());
 // ====================================================================
 const verifyToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer <token>"
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(403).json({ message: "Akses ditolak, token tidak ditemukan!" });
@@ -67,7 +66,7 @@ RoomReservation.hasMany(ReservationSnack, { foreignKey: 'reservationId' });
 
 
 // ====================================================================
-// 📝 ROUTE REGISTRASI AKUN (DIBENAHI JADI LEVEL CUSTOMER)
+// 📝 ROUTE REGISTRASI AKUN
 // ====================================================================
 app.post('/register', async (req, res) => {
     try {
@@ -105,7 +104,7 @@ app.post('/register', async (req, res) => {
 
 
 // ====================================================================
-// 🔄 ROUTE LOGIN (SIGN IN DENGAN PENANDATANGANAN TOKEN JWT)
+// 🔄 ROUTE LOGIN
 // ====================================================================
 app.post('/login', async (req, res) => {
     try {
@@ -133,38 +132,49 @@ app.post('/login', async (req, res) => {
 
 
 // ====================================================================
-// ⏱️ SIKLUS PENGEMBALIAN STOK OTOMATIS (AUTO RELEASE UNITS)
+// ⏱️ FIX UTAMA 1: AUTOMATION RELEASE UNIT DATABASE DENGAN SOLID
 // ====================================================================
 const autoReleaseUnits = async () => {
     try {
         const sekarangLokal = moment().format('YYYY-MM-DD HH:mm:ss');
 
-        // 1. Expired Rental Reguler
+        // 1. Bersihkan Rental Reguler (Mengecek status active maupun pending/booked yang hangus)
         const expiredBookings = await Booking.findAll({
-            where: { status: 'active', waktu_selesai: { [Op.lt]: sekarangLokal } }
+            where: { 
+                status: { [Op.in]: ['active', 'pending', 'booked'] }, 
+                waktu_selesai: { [Op.lt]: sekarangLokal } 
+            }
         });
         if (expiredBookings.length > 0) {
             for (const booking of expiredBookings) {
                 const unitId = booking.unitId;
+                const statusLama = booking.status;
                 await booking.update({ status: 'finished' });
-                if (unitId) {
+                
+                // Kembalikan stok ke gudang jika status lamanya sempat memotong stok (active)
+                if (unitId && statusLama === 'active') {
                     await Unit.increment('stok_tersedia', { by: 1, where: { id: unitId } });
-                    console.log(`✅ [Auto-Release] Unit Rental Reguler ID ${unitId} dikembalikan.`);
+                    console.log(`✅ [Auto-Release] Unit Rental Reguler ID ${unitId} otomatis dikembalikan.`);
                 }
             }
         }
 
-        // 2. Expired Reservasi Kamar Privat
+        // 2. Bersihkan Reservasi Kamar Privat
         const expiredReservations = await RoomReservation.findAll({
-            where: { status: 'active', waktu_selesai: { [Op.lt]: sekarangLokal } }
+            where: { 
+                status: { [Op.in]: ['active', 'pending', 'booked'] }, 
+                waktu_selesai: { [Op.lt]: sekarangLokal } 
+            }
         });
         if (expiredReservations.length > 0) {
             for (const resv of expiredReservations) {
                 const unitId = resv.unitId;
+                const statusLama = resv.status;
                 await resv.update({ status: 'finished' });
-                if (unitId) {
+                
+                if (unitId && statusLama === 'active') {
                     await Unit.increment('stok_tersedia', { by: 1, where: { id: unitId } });
-                    console.log(`✅ [Auto-Release] Unit Kamar Privat ID ${unitId} dikembalikan.`);
+                    console.log(`✅ [Auto-Release] Unit Kamar Privat ID ${unitId} otomatis dikembalikan.`);
                 }
             }
         }
@@ -172,14 +182,14 @@ const autoReleaseUnits = async () => {
         console.error("🔥 Gagal menjalankan siklus Auto-Release:", err);
     }
 };
-setInterval(autoReleaseUnits, 10000);
+// Jalankan pengecekan otomatis database setiap 5 detik agar timer user responsif
+setInterval(autoReleaseUnits, 5000);
 
 
 // ====================================================================
 // 🎮 API TRANSAKSI UTAMA (TERPROTEKSI TOKEN)
 // ====================================================================
 
-// --- KAMPANYE RENTAL REGULER ---
 app.post('/api/booking', verifyToken, async (req, res) => {
     try {
         const { userId, typePs, jenis, durasi, namaLengkap, jaminan, alamat, kontak, waktuMulaiKustom } = req.body;
@@ -210,8 +220,7 @@ app.post('/api/booking', verifyToken, async (req, res) => {
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
         if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
 
-        const durasiSimulasiKamar = Math.max(1, Math.round(parseInt(durasi, 10) / 60));
-        const waktuSelesai = moment(waktuMulai).add(parseInt(durasi), 'minutes').format('YYYY-MM-DD HH:mm:ss'); 
+        const waktuSelesai = moment(waktuMulai).add(parseInt(durasi, 10), 'minutes').format('YYYY-MM-DD HH:mm:ss'); 
 
         const newBooking = await Booking.create({
             userId, unitId: unit.id, nama_penyewa: namaLengkap,
@@ -220,6 +229,7 @@ app.post('/api/booking', verifyToken, async (req, res) => {
             status: 'pending', isReservation: (jenis || alamat === "PSHUB Room")
         });
 
+        // Potong stok gudang
         await unit.decrement('stok_tersedia', { by: 1 });
         res.status(201).json(newBooking);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -235,7 +245,6 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
         else if (jenisFix.toLowerCase() === 'vip') jenisFix = 'VIP';
 
         let cleanName = typePs ? typePs.toUpperCase().trim() : "";
-        
         let psNumber = "5"; 
         if (cleanName.includes("PS3") || cleanName.includes("PS 3") || cleanName.includes("PLAYSTATION 3") || cleanName.includes("PLAYSTATION3")) {
             psNumber = "3";
@@ -269,13 +278,10 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
         }
 
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
-        if (waktuMulaiKustom) { 
-            waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
-        }
+        if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
         
-        // 🎯 SINKRONISASI KILAT: 1 Jam dari frontend (60 menit) / 60 = 1 minute sewa di database
-        const durasiSimulasiKamar = Math.max(1, Math.round(parseInt(durasi, 10) / 60));
-        const waktuSelesai = moment(waktuMulai).add(durasiSimulasiKamar, 'minutes').format('YYYY-MM-DD HH:mm:ss');
+        // 🎯 DISESUAIKAN: Menghitung waktu selesai riil berdasarkan total menit dari frontend (bukan pembagian 60)
+        const waktuSelesai = moment(waktuMulai).add(parseInt(durasi, 10), 'minutes').format('YYYY-MM-DD HH:mm:ss');
 
         const newReservation = await RoomReservation.create({
             userId: parseInt(userId, 10),
@@ -286,7 +292,7 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
             jumlah_orang: parseInt(jumlah_orang, 10) || 1,
             waktu_mulai: waktuMulai,
             waktu_selesai: waktuSelesai,
-            status: 'pending' // Masuk antrean, stok database belum dipotong
+            status: 'pending' 
         });
 
         if (cartData && Object.keys(cartData).length > 0) {
@@ -308,7 +314,6 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
             if (snackRecords.length > 0) await ReservationSnack.bulkCreate(snackRecords);
         }
 
-        // 🎯 FIX UTAMA: Hapus decrement stok di sini agar visual bilik kosong di denah tidak hilang mendadak
         res.status(201).json(newReservation);
     } catch (err) {
         console.error("🔥 Gagal mencatat reservasi:", err);
@@ -338,11 +343,11 @@ app.get('/api/my-booking/:userId', verifyToken, async (req, res) => {
         const { userId } = req.params;
         const [regulerRentals, privateRoomReservations] = await Promise.all([
             Booking.findAll({
-                where: { userId, status: 'active' },
+                where: { userId, status: { [Op.in]: ['active', 'pending', 'booked'] } },
                 include: [{ model: Unit, attributes: ['nama_unit', 'jenis'] }]
             }),
             RoomReservation.findAll({
-                where: { userId, status: 'active' },
+                where: { userId, status: { [Op.in]: ['active', 'pending', 'booked'] } },
                 include: [{ model: Unit, attributes: ['nama_unit', 'jenis'] }]
             })
         ]);
@@ -356,28 +361,33 @@ app.get('/api/units', verifyToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// 🎯 FIX UTAMA 2: SEWA PENDING SEKARANG LOLOS DI FILTER MONITORING LIVE ADMIN
 app.get('/api/active-rentals', verifyToken, async (req, res) => {
     try {
-        // 🎯 PERBAIKAN UTAMA: Tambahkan klausa 'where' untuk menyaring data yang statusnya 'active' saja
         const [regulerRentals, privateRoomReservations] = await Promise.all([
             Booking.findAll({
-                where: { status: 'active' }, // 💡 Hanya ambil sewa reguler yang sedang bermain
+                // Meloloskan status pending dan booked agar dibaca oleh bilik denah admin
+                where: { status: { [Op.in]: ['active', 'pending', 'booked'] } }, 
                 include: [{ model: Unit, attributes: ['nama_unit', 'jenis'] }]
             }),
             RoomReservation.findAll({
-                where: { status: 'active' }, // 💡 Hanya ambil bilik privat yang sedang berjalan
+                where: { status: { [Op.in]: ['active', 'pending', 'booked'] } }, 
                 include: [{ model: Unit, attributes: ['nama_unit', 'jenis'] }]
             })
         ]);
 
-        // Mapping format data agar seragam saat digabungkan
         const formattedRooms = privateRoomReservations.map(room => {
             const data = room.toJSON();
             return {
                 id: `ROOM-${data.id}`,
                 nama_unit: data.Unit?.nama_unit || "PS Room",
+                waktu_mulai: data.waktu_mulai,
                 waktu_selesai: data.waktu_selesai,
                 status: data.status,
+                nama_player: data.nama_player,
+                jenis: data.jenis,
+                unitId: data.unitId,
                 Unit: data.Unit
             };
         });
@@ -387,15 +397,17 @@ app.get('/api/active-rentals', verifyToken, async (req, res) => {
             return {
                 id: `REG-${data.id}`,
                 nama_unit: data.Unit?.nama_unit || data.typePs || "PS Reguler",
+                waktu_mulai: data.waktu_mulai,
                 waktu_selesai: data.waktu_selesai,
                 status: data.status,
+                namaLengkap: data.nama_penyewa,
+                jenis: data.Unit?.jenis || "Standar",
+                unitId: data.unitId,
                 Unit: data.Unit
             };
         });
 
-        // Gabungkan kedua tipe rental aktif ke dalam satu array tunggal
         const activeList = [...formattedReguler, ...formattedRooms];
-        
         res.json(activeList);
     } catch (err) {
         console.error("🔥 Gagal memetakan data aktif sewa:", err);
@@ -417,7 +429,7 @@ app.get('/api/menus', verifyToken, async (req, res) => {
 // ====================================================================
 app.get('/api/admin/dashboard-summary', verifyToken, async (req, res) => {
   try {
-    const unreadCount = await Booking.count({ where: { status: 'active' } }); 
+    const unreadCount = await Booking.count({ where: { status: 'pending' } }); 
     const availableUnits = await Unit.sum('stok_tersedia') || 0; 
     const roomsActive = await RoomReservation.count({ where: { status: 'active' } });
     const roomsTotal = 22; 
@@ -475,10 +487,7 @@ app.put('/api/admin/reservation/:type/:id', verifyToken, async (req, res) => {
             const room = await RoomReservation.findByPk(id);
             if (!room) return res.status(404).json({ message: "Data tidak ditemukan" });
             
-            // 🎯 LOGIKA ALUR MUTASI STOK YANG BENAR:
-            // Stok baru dipotong dari database jika status disetujui berubah menjadi ACTIVE
             if (action === 'accept' && room.status !== 'active') {
-                // Pastikan stok masih ada sebelum admin menyetujui invoice
                 const unitTerkait = await Unit.findByPk(room.unitId);
                 if (!unitTerkait || unitTerkait.stok_tersedia <= 0) {
                     return res.status(400).json({ message: "Gagal menyetujui, unit di gudang sudah penuh terpakai!" });
@@ -670,6 +679,6 @@ app.get('/api/admin/users/:userId/history', verifyToken, async (req, res) => {
     }
 });
 
-// 💡 PERBAIKAN PORT: Menggunakan port dinamis bawaan cloud Railway (process.env.PORT)
+// 💡 Menggunakan port dinamis bawaan cloud Railway
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT} dengan Keamanan JWT Terintegrasi`));
