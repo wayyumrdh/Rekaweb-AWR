@@ -132,10 +132,11 @@ app.post('/login', async (req, res) => {
 
 
 // ====================================================================
-// ⏱️ AUTOMATION RELEASE UNIT DATABASE (1 JAM SEWA = 1 MENIT RIIL)
+// ⏱️ FIX AUTO RELEASE: AUTOMATION PENGEMBALIAN UNIT (AGRESIF 3 DETIK)
 // ====================================================================
 const autoReleaseUnits = async () => {
     try {
+        // Paksa perbandingan waktu menggunakan format ISO string lokal yang stabil
         const sekarangLokal = moment().format('YYYY-MM-DD HH:mm:ss');
 
         // 1. Bersihkan Rental Reguler (Mengecek status active maupun pending/booked yang hangus)
@@ -151,7 +152,7 @@ const autoReleaseUnits = async () => {
                 const statusLama = booking.status;
                 await booking.update({ status: 'finished' });
                 
-                // Kembalikan stok ke gudang jika status lamanya sempat memotong stok fisik (active)
+                // 🎯 FIX: Kembalikan stok ke gudang jika status lamanya MEMANG sudah disetujui (active)
                 if (unitId && statusLama === 'active') {
                     await Unit.increment('stok_tersedia', { by: 1, where: { id: unitId } });
                     console.log(`✅ [Auto-Release] Unit Rental Reguler ID ${unitId} otomatis dikembalikan.`);
@@ -182,8 +183,8 @@ const autoReleaseUnits = async () => {
         console.error("🔥 Gagal menjalankan siklus Auto-Release:", err);
     }
 };
-// Jalankan pengecekan otomatis database setiap 5 detik agar timer user sangat responsif saat testing
-setInterval(autoReleaseUnits, 5000);
+// Diubah menjadi 3 detik agar auto-release merespon kilat hitungan menit simulasi skripsi kamu
+setInterval(autoReleaseUnits, 3000);
 
 
 // ====================================================================
@@ -220,8 +221,13 @@ app.post('/api/booking', verifyToken, async (req, res) => {
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
         if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
 
-        // 🎯 FIX SIMULASI TIMING: Mengubah input durasi Jam menjadi skala Menit di database
-        const durasiSimulasi = Math.max(1, parseInt(durasi, 10)); 
+        // 🎯 FIX 1 JAM = 1 MENIT SIMULASI:
+        // Jika dari frontend mengirimkan data menit murni (contoh: 60, 120), kita konversi dulu menjadi nilai unit jam (1, 2)
+        let inputDurasi = parseInt(durasi, 10) || 1;
+        if (inputDurasi >= 60) {
+            inputDurasi = Math.round(inputDurasi / 60);
+        }
+        const durasiSimulasi = Math.max(1, inputDurasi); 
         const waktuSelesai = moment(waktuMulai).add(durasiSimulasi, 'minutes').format('YYYY-MM-DD HH:mm:ss'); 
 
         const newBooking = await Booking.create({
@@ -231,7 +237,6 @@ app.post('/api/booking', verifyToken, async (req, res) => {
             status: 'pending', isReservation: (jenis || alamat === "PSHUB Room")
         });
 
-        // 💡 FIX AMAN: Jangan potong stok gudang saat pending agar tidak terpotong dua kali di rumus hitung frontend admin
         res.status(201).json(newBooking);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -281,8 +286,12 @@ app.post('/api/room-reservation', verifyToken, async (req, res) => {
         let waktuMulai = moment().format('YYYY-MM-DD HH:mm:ss');
         if (waktuMulaiKustom) waktuMulai = moment(waktuMulaiKustom).format('YYYY-MM-DD HH:mm:ss');
         
-        // 🎯 FIX SIMULASI TIMING: 1 jam dari frontend dikonversi menjadi 1 menit riil di tabel basis data
-        const durasiSimulasiKamar = Math.max(1, parseInt(durasi, 10));
+        // 🎯 FIX 1 JAM = 1 MENIT SIMULASI ROOM RESERVATION:
+        let inputDurasiKamar = parseInt(durasi, 10) || 1;
+        if (inputDurasiKamar >= 60) {
+            inputDurasiKamar = Math.round(inputDurasiKamar / 60);
+        }
+        const durasiSimulasiKamar = Math.max(1, inputDurasiKamar);
         const waktuSelesai = moment(waktuMulai).add(durasiSimulasiKamar, 'minutes').format('YYYY-MM-DD HH:mm:ss');
 
         const newReservation = await RoomReservation.create({
@@ -364,7 +373,6 @@ app.get('/api/units', verifyToken, async (req, res) => {
 });
 
 
-// 🎯 FIX UTAMA: Sewa pending dan booked sekarang diloloskan murni agar terbaca di denah bilik live admin
 app.get('/api/active-rentals', verifyToken, async (req, res) => {
     try {
         const [regulerRentals, privateRoomReservations] = await Promise.all([
@@ -471,6 +479,7 @@ app.get('/api/admin/pending-reservations', verifyToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 🎯 FIX UTAMA LOGIKA APPROVAL & MANAJEMEN STOK DENAH FRONTEND:
 app.put('/api/admin/reservation/:type/:id', verifyToken, async (req, res) => {
     try {
         const { type, id } = req.params;
@@ -481,13 +490,16 @@ app.put('/api/admin/reservation/:type/:id', verifyToken, async (req, res) => {
             const booking = await Booking.findByPk(id);
             if (!booking) return res.status(404).json({ message: "Data tidak ditemukan" });
             
-            // 💡 FIX AMAN: Stok fisik di database baru dikurangi saat Admin mengklik tombol ACCEPT (Setuju)
+            // Stok fisik baru dipotong jika admin menekan 'accept' dan statusnya belum active
             if (action === 'accept' && booking.status !== 'active') {
-                await Unit.decrement('stok_tersedia', { by: 1, where: { id: booking.unitId } });
+                const unitTerkait = await Unit.findByPk(booking.unitId);
+                if (!unitTerkait || unitTerkait.stok_tersedia <= 0) {
+                    return res.status(400).json({ message: "Gagal menyetujui, unit sudah terpakai penuh!" });
+                }
+                await unitTerkait.decrement('stok_tersedia', { by: 1 });
             }
             
             await booking.update({ status: newStatus });
-            if (action === 'reject') await Unit.increment('stok_tersedia', { by: 1, where: { id: booking.unitId } });
             
         } else if (type === 'room') {
             const room = await RoomReservation.findByPk(id);
