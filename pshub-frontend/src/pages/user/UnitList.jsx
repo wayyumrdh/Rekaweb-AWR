@@ -103,7 +103,7 @@ const UnitList = () => {
       color: 'from-purple-600 to-indigo-700', shadow: 'shadow-purple-900/20' 
     };
     if (name.includes('4')) return { 
-      img: 'https://www.shutterstock.com/id/image-photo/varna-bulgaria-18-november-2016-sony-553415794?trackingId=50a06819-c565-4a75-9b1b-ffd7c55a09a2&listId=searchResults',
+      img: 'https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?q=80&w=400',
       color: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-900/20' 
     };
     return { 
