@@ -96,21 +96,33 @@ const UnitList = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const getVisual = (name) => {
-    if (!name) return { img: '', color: 'from-slate-600 to-slate-700', shadow: 'shadow-black/20' };
-    if (name.includes('5')) return { 
-      img: 'https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?q=80&w=400',
-      color: 'from-purple-600 to-indigo-700', shadow: 'shadow-purple-900/20' 
-    };
-    if (name.includes('4')) return { 
-      img: 'https://carisinyal.com/wp-content/uploads/2020/11/Prosesor.jpg',
-      color: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-900/20' 
-    };
-    return { 
-      img: 'https://carisinyal.com/wp-content/uploads/2020/11/Prosesor.jpg',
-      color: 'from-red-600 to-rose-700', shadow: 'shadow-red-900/20' 
-    };
+const getVisual = (name) => {
+  if (!name) return { img: '', color: 'from-slate-600 to-slate-700', shadow: 'shadow-black/20' };
+  
+  // Kondisi Khusus PlayStation 5
+  if (name.includes('5')) return { 
+    img: 'https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?q=80&w=400',
+    color: 'from-purple-600 to-indigo-700', shadow: 'shadow-purple-900/20' 
   };
+  
+  // Kondisi Khusus PlayStation 4
+  if (name.includes('4')) return { 
+    img: 'https://images.unsplash.com/photo-1507450966964-07d0f994271c?q=80&w=400', // Link Unsplash PS4 jernih
+    color: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-900/20' 
+  };
+
+  // 🎯 TAMBAHAN BARU: Kondisi Spesifik PlayStation 2
+  if (name.includes('2')) return { 
+    img: 'https://images.unsplash.com/photo-1591123720164-de1348028a82?q=80&w=400', // Tautan gambar representatif konsol retro/PS2
+    color: 'from-red-600 to-rose-700', shadow: 'shadow-red-900/20' 
+  };
+  
+  // Fallback cadangan jika ada nama unit lain di luar PS 5, 4, dan 2
+  return { 
+    img: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=400',
+    color: 'from-slate-600 to-slate-700', shadow: 'shadow-black/20' 
+  };
+};
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white p-6 md:p-12 font-sans relative overflow-hidden">
