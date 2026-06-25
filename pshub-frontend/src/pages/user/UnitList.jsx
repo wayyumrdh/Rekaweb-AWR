@@ -103,7 +103,7 @@ const UnitList = () => {
       color: 'from-purple-600 to-indigo-700', shadow: 'shadow-purple-900/20' 
     };
     if (name.includes('4')) return { 
-      img: 'https://images.unsplash.com/photo-1507450966964-07d0f994271c?q=80&w=400',
+      img: 'https://carisinyal.com/wp-content/uploads/2020/11/Prosesor.jpg',
       color: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-900/20' 
     };
     return { 
