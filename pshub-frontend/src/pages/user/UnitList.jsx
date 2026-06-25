@@ -107,19 +107,19 @@ const getVisual = (name) => {
   
   // Kondisi Khusus PlayStation 4
   if (name.includes('4')) return { 
-    img: 'https://images.unsplash.com/photo-1507450966964-07d0f994271c?q=80&w=400', // Link Unsplash PS4 jernih
+    img: 'https://img.lazcdn.com/g/p/207a007f561c6f685e11162e39adae4f.jpg_720x720q80.jpg_.webp', // Link Unsplash PS4 jernih
     color: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-900/20' 
   };
 
   // 🎯 TAMBAHAN BARU: Kondisi Spesifik PlayStation 2
   if (name.includes('2')) return { 
-    img: 'https://images.unsplash.com/photo-1591123720164-de1348028a82?q=80&w=400', // Tautan gambar representatif konsol retro/PS2
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1c/PS2-Versions.jpg/1920px-PS2-Versions.jpg', // Tautan gambar representatif konsol retro/PS2
     color: 'from-red-600 to-rose-700', shadow: 'shadow-red-900/20' 
   };
   
   // Fallback cadangan jika ada nama unit lain di luar PS 5, 4, dan 2
   return { 
-    img: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=400',
+    img: 'https://carisinyal.com/wp-content/uploads/2020/11/Prosesor.jpg',
     color: 'from-slate-600 to-slate-700', shadow: 'shadow-black/20' 
   };
 };
